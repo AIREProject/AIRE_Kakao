@@ -7,18 +7,23 @@ Kakao i Open Builder의 SkillPayload를 기존 AIRE Backend의 모바일 Chat �
 KakaoTalk Channel
   -> POST /kakao/skill
   -> AIRE_Kakao
-  -> POST https://traip.mtvs2026.work/api/v1/chat
+  -> POST https://traip.mtvs2026.work/api/v1/integrations/kakao/chat
   -> MAKO SkillResponse
 ```
 
-모든 채널 사용자는 제품 결정에 따라 `AIRE_OPEN / demo-slot-1 / mako`와 `kakao-shared` 세션을
-공유합니다. `botUserKey`는 저장하거나 Backend로 전달하지 않습니다. 일반 요청은 4초 안에
+각 채널 사용자는 `bot.id + botUserKey`에서 파생된 독립 Backend Profile을 사용합니다. Profile마다
+`demo-slot-1 / mako / kakao` scope가 고정되며 게임·웹의 `AIRE_OPEN` 기억과 공유하지 않습니다.
+`bot.id`와 `user.id/type`은 Backend 요청까지만 보존되고, Backend는 HMAC 파생 ID만 저장합니다.
+`user.type`은 `botUserKey`만 허용합니다.
+일반 요청은 4초 안에
 직접 응답하고, AI 챗봇 Callback 권한이 활성화된 요청은 `useCallback=true`를 먼저 반환한 뒤
 1회용 HTTPS Callback URL로 최종 응답을 보냅니다.
 
 ## 환경변수
 
 `.env.example`을 `.env`로 복사하고 `KAKAO_SKILL_SECRET`에 충분히 긴 무작위 값을 넣습니다.
+Backend가 발급한 `KAKAO_ADAPTER_TOKEN`도 반드시 설정해야 합니다. 미설정 시 Skill 요청은
+503으로 거부됩니다.
 비밀값은 저장소에 커밋하지 않습니다.
 
 ## 카카오 챗봇 관리자센터
@@ -36,5 +41,5 @@ KakaoTalk Channel
 python -m unittest discover -s tests -v
 ```
 
-테스트는 공개 사용자 공유, 비밀 Header, 설정 누락, 4초 제한, Callback, Callback URL 검증과
-SimpleText 1,000자 제한을 확인합니다.
+테스트는 사용자·봇 신원 전달, 전용 Adapter token, 설정 누락 시 fail-closed, 4초 제한, Callback,
+Callback URL 검증과 SimpleText 1,000자 제한을 확인합니다.

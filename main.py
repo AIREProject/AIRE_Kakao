@@ -11,7 +11,14 @@ from fastapi import BackgroundTasks, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from api_client import AireApiClient, BackendResponseError
-from config import BACKEND_URL, COMPANION_ID, KAKAO_SKILL_SECRET, PORT, SAVE_SLOT_ID
+from config import (
+    BACKEND_URL,
+    COMPANION_ID,
+    KAKAO_ADAPTER_TOKEN,
+    KAKAO_SKILL_SECRET,
+    PORT,
+    SAVE_SLOT_ID,
+)
 
 KAKAO_SKILL_SECRET_HEADER = "X-Kakao-Skill-Secret"
 KAKAO_SIMPLE_TEXT_MAX_LENGTH = 1000
@@ -22,7 +29,14 @@ logger = logging.getLogger("aire.kakao")
 
 
 class ChatClient(Protocol):
-    async def send_chat(self, user_message: str) -> str: ...
+    async def send_chat(
+        self,
+        user_message: str,
+        *,
+        bot_id: str,
+        user_id: str,
+        user_type: str,
+    ) -> str: ...
 
 
 class KakaoInputModel(BaseModel):
@@ -34,6 +48,10 @@ class KakaoUser(KakaoInputModel):
     type: str = Field(min_length=1, max_length=32)
 
 
+class KakaoBot(KakaoInputModel):
+    id: str = Field(min_length=1, max_length=70)
+
+
 class KakaoUserRequest(KakaoInputModel):
     utterance: str = Field(min_length=1, max_length=2000)
     user: KakaoUser
@@ -41,6 +59,7 @@ class KakaoUserRequest(KakaoInputModel):
 
 
 class KakaoSkillPayload(KakaoInputModel):
+    bot: KakaoBot
     user_request: KakaoUserRequest = Field(alias="userRequest")
 
 
@@ -73,9 +92,23 @@ async def _post_callback(callback_url: str, payload: dict[str, object]) -> None:
         response.raise_for_status()
 
 
-async def _safe_chat(client: ChatClient, utterance: str) -> dict[str, object]:
+async def _safe_chat(
+    client: ChatClient,
+    utterance: str,
+    *,
+    bot_id: str,
+    user_id: str,
+    user_type: str,
+) -> dict[str, object]:
     try:
-        return _simple_text(await client.send_chat(utterance))
+        return _simple_text(
+            await client.send_chat(
+                utterance,
+                bot_id=bot_id,
+                user_id=user_id,
+                user_type=user_type,
+            )
+        )
     except (BackendResponseError, httpx.HTTPError, TimeoutError, ValueError):
         return _simple_text("지금은 대화 연결이 불안정해. 잠시 뒤에 다시 말해 줘.")
 
@@ -84,8 +117,17 @@ async def _respond_via_callback(
     client: ChatClient,
     utterance: str,
     callback_url: str,
+    bot_id: str,
+    user_id: str,
+    user_type: str,
 ) -> None:
-    response = await _safe_chat(client, utterance)
+    response = await _safe_chat(
+        client,
+        utterance,
+        bot_id=bot_id,
+        user_id=user_id,
+        user_type=user_type,
+    )
     try:
         await _post_callback(callback_url, response)
     except httpx.HTTPError:
@@ -130,6 +172,13 @@ def create_app(
             x_kakao_skill_secret, skill_secret
         ):
             raise HTTPException(status_code=401, detail="Invalid Kakao skill secret.")
+        if chat_client is None and not KAKAO_ADAPTER_TOKEN:
+            raise HTTPException(status_code=503, detail="Kakao adapter is not configured.")
+
+        user = payload.user_request.user
+        if user.type != "botUserKey":
+            raise HTTPException(status_code=400, detail="Unsupported Kakao user type.")
+        bot_id = payload.bot.id
 
         callback_url = payload.user_request.callback_url
         if callback_url is not None:
@@ -139,12 +188,21 @@ def create_app(
                 selected_client,
                 payload.user_request.utterance,
                 callback_url,
+                bot_id,
+                user.id,
+                user.type,
             )
             return {"version": "2.0", "useCallback": True}
 
         try:
             async with asyncio.timeout(direct_timeout_seconds):
-                return await _safe_chat(selected_client, payload.user_request.utterance)
+                return await _safe_chat(
+                    selected_client,
+                    payload.user_request.utterance,
+                    bot_id=bot_id,
+                    user_id=user.id,
+                    user_type=user.type,
+                )
         except TimeoutError:
             return _simple_text("지금은 대화 연결이 불안정해. 잠시 뒤에 다시 말해 줘.")
 

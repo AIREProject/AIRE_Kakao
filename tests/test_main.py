@@ -13,10 +13,24 @@ SECRET = "test-kakao-secret"
 class FakeChatClient:
     def __init__(self, text: str = "안녕. 오늘도 같이 가자.") -> None:
         self.text = text
-        self.messages: list[str] = []
+        self.messages: list[dict[str, str]] = []
 
-    async def send_chat(self, user_message: str) -> str:
-        self.messages.append(user_message)
+    async def send_chat(
+        self,
+        user_message: str,
+        *,
+        bot_id: str,
+        user_id: str,
+        user_type: str,
+    ) -> str:
+        self.messages.append(
+            {
+                "message": user_message,
+                "bot_id": bot_id,
+                "user_id": user_id,
+                "user_type": user_type,
+            }
+        )
         return self.text
 
 
@@ -41,7 +55,7 @@ def _client(fake: FakeChatClient, timeout: float = 4.0) -> TestClient:
 
 
 class KakaoSkillTests(unittest.TestCase):
-    def test_all_channel_users_use_the_same_chat_client(self) -> None:
+    def test_channel_users_forward_distinct_identities(self) -> None:
         fake = FakeChatClient()
         client = _client(fake)
 
@@ -58,7 +72,38 @@ class KakaoSkillTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 200)
-        self.assertEqual(fake.messages, ["안녕", "안녕"])
+        self.assertEqual(
+            fake.messages,
+            [
+                {
+                    "message": "안녕",
+                    "bot_id": "bot-1",
+                    "user_id": "user-a",
+                    "user_type": "botUserKey",
+                },
+                {
+                    "message": "안녕",
+                    "bot_id": "bot-1",
+                    "user_id": "user-b",
+                    "user_type": "botUserKey",
+                },
+            ],
+        )
+
+    def test_unsupported_user_type_is_rejected(self) -> None:
+        response = _client(FakeChatClient()).post(
+            "/kakao/skill",
+            headers={"X-Kakao-Skill-Secret": SECRET},
+            json={
+                **_payload(),
+                "userRequest": {
+                    **_payload()["userRequest"],
+                    "user": {"id": "user-1", "type": "id"},
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_missing_or_invalid_secret_is_rejected(self) -> None:
         client = _client(FakeChatClient())
@@ -84,11 +129,32 @@ class KakaoSkillTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 503)
 
+    def test_missing_adapter_token_is_unavailable(self) -> None:
+        response = TestClient(create_app(skill_secret=SECRET)).post(
+            "/kakao/skill",
+            headers={"X-Kakao-Skill-Secret": SECRET},
+            json=_payload(),
+        )
+
+        self.assertEqual(response.status_code, 503)
+
     def test_direct_timeout_returns_valid_fallback(self) -> None:
         class SlowChatClient(FakeChatClient):
-            async def send_chat(self, user_message: str) -> str:
+            async def send_chat(
+                self,
+                user_message: str,
+                *,
+                bot_id: str,
+                user_id: str,
+                user_type: str,
+            ) -> str:
                 await asyncio.sleep(0.05)
-                return await super().send_chat(user_message)
+                return await super().send_chat(
+                    user_message,
+                    bot_id=bot_id,
+                    user_id=user_id,
+                    user_type=user_type,
+                )
 
         response = _client(SlowChatClient(), timeout=0.001).post(
             "/kakao/skill",
@@ -101,8 +167,9 @@ class KakaoSkillTests(unittest.TestCase):
         self.assertIn("연결이 불안정", text)
 
     def test_callback_returns_pending_and_delivers_response(self) -> None:
+        fake = FakeChatClient()
         with patch("main._post_callback", new=AsyncMock()) as post_callback:
-            response = _client(FakeChatClient()).post(
+            response = _client(fake).post(
                 "/kakao/skill",
                 headers={"X-Kakao-Skill-Secret": SECRET},
                 json=_payload(callbackUrl="https://callback.example/kakao"),
@@ -110,6 +177,17 @@ class KakaoSkillTests(unittest.TestCase):
 
         self.assertEqual(response.json(), {"version": "2.0", "useCallback": True})
         post_callback.assert_awaited_once()
+        self.assertEqual(
+            fake.messages,
+            [
+                {
+                    "message": "안녕",
+                    "bot_id": "bot-1",
+                    "user_id": "user-1",
+                    "user_type": "botUserKey",
+                }
+            ],
+        )
 
     def test_invalid_callback_url_is_rejected(self) -> None:
         response = _client(FakeChatClient()).post(

@@ -8,8 +8,8 @@ services:
     envVars:
       - key: BACKEND_URL
         value: https://traip.mtvs2026.work
-      - key: BEARER_TOKEN
-        value: AIRE_WEB
+      - key: KAKAO_ADAPTER_TOKEN
+        sync: false
       - key: SAVE_SLOT_ID
         value: demo-slot-1
       - key: COMPANION_ID

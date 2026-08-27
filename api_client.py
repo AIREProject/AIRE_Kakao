@@ -7,13 +7,13 @@ import httpx
 from config import (
     API_TIMEOUT_SECONDS,
     BACKEND_URL,
-    BEARER_TOKEN,
+    KAKAO_ADAPTER_TOKEN,
     COMPANION_ID,
     SAVE_SLOT_ID,
 )
 
 KST = timezone(timedelta(hours=9))
-KAKAO_SHARED_SESSION_ID = "kakao-shared"
+KAKAO_SESSION_ID = "kakao"
 
 
 class BackendResponseError(RuntimeError):
@@ -41,20 +41,27 @@ class AireApiClient:
         self,
         *,
         base_url: str = BACKEND_URL,
-        bearer_token: str = BEARER_TOKEN,
+        adapter_token: str = KAKAO_ADAPTER_TOKEN,
         timeout_seconds: float = API_TIMEOUT_SECONDS,
     ) -> None:
         self._base_url = base_url.rstrip("/")
-        self._bearer_token = bearer_token
+        self._adapter_token = adapter_token
         self._timeout_seconds = timeout_seconds
 
-    async def send_chat(self, user_message: str) -> str:
+    async def send_chat(
+        self,
+        user_message: str,
+        *,
+        bot_id: str,
+        user_id: str,
+        user_type: str,
+    ) -> str:
         now = datetime.now(KST)
         request_id = f"kakao-{uuid4()}"
         payload = {
             "schema_version": 1,
             "request_id": request_id,
-            "session_id": KAKAO_SHARED_SESSION_ID,
+            "session_id": KAKAO_SESSION_ID,
             "save_slot_id": SAVE_SLOT_ID,
             "companion_id": COMPANION_ID,
             "message_id": f"message-{uuid4()}",
@@ -68,15 +75,21 @@ class AireApiClient:
             },
             "allowed_commands": [],
         }
+        chat_request = payload
+        payload = {
+            "bot_id": bot_id,
+            "user": {"id": user_id, "type": user_type},
+            "chat": chat_request,
+        }
         headers = {
             "Accept": "application/json",
-            "Authorization": f"Bearer {self._bearer_token}",
+            "Authorization": f"Bearer {self._adapter_token}",
             "Content-Type": "application/json",
             "X-Request-ID": request_id,
         }
         async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
             response = await client.post(
-                f"{self._base_url}/api/v1/chat",
+                f"{self._base_url}/api/v1/integrations/kakao/chat",
                 headers=headers,
                 json=payload,
             )

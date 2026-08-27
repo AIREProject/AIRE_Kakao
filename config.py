@@ -8,7 +8,7 @@ except ImportError:
     pass
 
 BACKEND_URL = os.getenv("BACKEND_URL", "https://traip.mtvs2026.work").rstrip("/")
-BEARER_TOKEN = os.getenv("BEARER_TOKEN", "AIRE_WEB")
+KAKAO_ADAPTER_TOKEN = os.getenv("KAKAO_ADAPTER_TOKEN", "")
 SAVE_SLOT_ID = os.getenv("SAVE_SLOT_ID", "demo-slot-1")
 COMPANION_ID = os.getenv("COMPANION_ID", "mako")
 KAKAO_SKILL_SECRET = os.getenv("KAKAO_SKILL_SECRET", "")
