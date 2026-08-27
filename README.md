@@ -43,3 +43,9 @@ python -m unittest discover -s tests -v
 
 테스트는 사용자·봇 신원 전달, 전용 Adapter token, 설정 누락 시 fail-closed, 4초 제한, Callback,
 Callback URL 검증과 SimpleText 1,000자 제한을 확인합니다.
+
+## 향후 작업
+
+카카오 사용자가 챗봇 시나리오 안에서 자신의 장기기억을 조회·삭제·초기화하는 기능은 현재
+보류 상태입니다. 구현 범위와 보안·테스트 기준은
+[카카오 장기기억 관리 기능 확장안](docs/KAKAO_MEMORY_MANAGEMENT_DEFERRED.md)을 따릅니다.
