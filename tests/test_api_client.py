@@ -3,7 +3,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from api_client import AireApiClient
+from api_client import AireApiClient, _guard_display_text
 
 
 class FakeResponse:
@@ -35,6 +35,28 @@ class FakeAsyncClient:
 
 
 class AireApiClientTests(unittest.TestCase):
+    def test_display_guard_replaces_exact_and_wrapped_player_echoes(self) -> None:
+        player_text = "나는 민트초코를 좋아해."
+
+        for response_text in (
+            player_text,
+            '사용자: "나는 민트초코를 좋아해."',
+            "응, 나는 민트초코를 좋아해.",
+            "나는 민트초코를 좋아해 / 나는 민트초코를 좋아해",
+        ):
+            with self.subTest(response_text=response_text):
+                guarded = _guard_display_text(response_text, player_text)
+                self.assertNotEqual(guarded, response_text)
+                self.assertNotIn("민트초코", guarded)
+
+    def test_display_guard_preserves_contextual_memory_response(self) -> None:
+        response_text = "네가 민트초코를 좋아한다고 기억하고 있어."
+
+        self.assertEqual(
+            _guard_display_text(response_text, "내가 좋아하는 음식이 뭐였지?"),
+            response_text,
+        )
+
     def test_kakao_wrapper_preserves_identity_and_mobile_chat_shape(self) -> None:
         async def run() -> str:
             client = AireApiClient(

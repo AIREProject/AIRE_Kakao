@@ -1,3 +1,6 @@
+import html
+import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -15,9 +18,69 @@ from config import (
 KST = timezone(timedelta(hours=9))
 KAKAO_SESSION_ID = "kakao"
 
+_ROLE_WRAPPER_PATTERN = re.compile(
+    r"^(?:(?:사용자|유저|플레이어|사람|user|human|player)\s*[:：-]\s*|"
+    r"(?:네가|사용자가|유저가|플레이어가)\s*(?:말한|보낸)\s*"
+    r"(?:말|내용|문장)?\s*[:：-]\s*)",
+    re.IGNORECASE,
+)
+_SHORT_ACKNOWLEDGEMENTS = ("응", "그래", "맞아", "어")
+_SAFE_DISPLAY_TEXTS = (
+    "응, 그 얘기 조금만 더 들려줘. 네 생각을 제대로 알고 싶어.",
+    "그래, 어디부터 같이 얘기해 볼까?",
+    "마코는 여기 있어. 편하게 이어서 말해 줘.",
+)
+
 
 class BackendResponseError(RuntimeError):
     pass
+
+
+def _normalize_echo_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", html.unescape(text)).lower()
+    for _ in range(3):
+        unwrapped = _ROLE_WRAPPER_PATTERN.sub("", normalized)
+        if unwrapped == normalized:
+            break
+        normalized = unwrapped
+    return "".join(character for character in normalized if character.isalnum())
+
+
+def _is_player_echo(display_text: str, user_message: str) -> bool:
+    normalized_response = _normalize_echo_text(display_text)
+    normalized_user = _normalize_echo_text(user_message)
+    if not normalized_response or not normalized_user:
+        return False
+    if normalized_response == normalized_user:
+        return True
+    if (
+        len(normalized_user) >= 2
+        and normalized_user in normalized_response
+        and len(normalized_response) - len(normalized_user) <= 12
+    ):
+        return True
+    if any(
+        normalized_response == f"{acknowledgement}{normalized_user}"
+        for acknowledgement in _SHORT_ACKNOWLEDGEMENTS
+    ):
+        return True
+    slash_variants = [
+        _normalize_echo_text(variant)
+        for variant in display_text.split("/")
+        if _normalize_echo_text(variant)
+    ]
+    return len(slash_variants) > 1 and all(
+        variant == normalized_user for variant in slash_variants
+    )
+
+
+def _guard_display_text(display_text: str, user_message: str) -> str:
+    if not _is_player_echo(display_text, user_message):
+        return display_text
+    for fallback in _SAFE_DISPLAY_TEXTS:
+        if not _is_player_echo(fallback, user_message):
+            return fallback
+    return "잠깐만, 네 얘기를 다시 생각해 볼게."
 
 
 def _period_for_hour(hour: int) -> str:
@@ -101,4 +164,4 @@ class AireApiClient:
         display_text = data.get("display_text")
         if not isinstance(display_text, str) or not display_text.strip():
             raise BackendResponseError("Backend response is missing display_text.")
-        return display_text
+        return _guard_display_text(display_text, user_message)
