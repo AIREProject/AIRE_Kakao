@@ -1,3 +1,11 @@
+"""Kakao 사용자 문맥을 AIRE Backend의 모바일 대화 요청으로 변환합니다.
+
+Adapter는 원본 botUserKey를 저장하지 않고 Backend 요청 경계까지만 전달합니다.
+Backend는 bot.id와 botUserKey로 채널 전용 HMAC Profile을 복원하므로 Kakao 기억은
+게임·웹 Profile과 섞이지 않습니다. 응답은 Request ID로 상관관계를 검증하고,
+사용자 발화를 그대로 되풀이한 문장은 안전한 MAKO 응답으로 교체합니다.
+"""
+
 import html
 import re
 import unicodedata
@@ -100,6 +108,8 @@ def _period_for_hour(hour: int) -> str:
 
 
 class AireApiClient:
+    """Kakao Identity와 대화 Context를 AIRE 통합 API 계약에 맞추는 Client입니다."""
+
     def __init__(
         self,
         *,

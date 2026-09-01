@@ -1,3 +1,11 @@
+"""Kakao i Skill 요청을 AIRE 대화 계약으로 연결하는 HTTP 경계입니다.
+
+Kakao Payload와 Skill Secret을 검증한 뒤 botUserKey와 bot.id를 Backend에 전달합니다.
+직접 응답은 Kakao 제한 시간 안에서 처리하고, Callback URL이 제공된 요청만 비동기로
+전환합니다. 외부 장애가 Kakao 응답 형식을 깨뜨리지 않도록 모든 대화 결과를 동일한
+SkillResponse로 정규화하는 것이 이 모듈의 핵심 책임입니다.
+"""
+
 import asyncio
 import logging
 import time
@@ -140,6 +148,7 @@ def create_app(
     skill_secret: str = KAKAO_SKILL_SECRET,
     direct_timeout_seconds: float = DIRECT_RESPONSE_TIMEOUT_SECONDS,
 ) -> FastAPI:
+    """검증·응답 시간 제한·Callback 정책을 포함한 Kakao Skill 앱을 구성합니다."""
     selected_client = chat_client or AireApiClient()
     app = FastAPI(title="AIRE KakaoTalk Bot")
 
